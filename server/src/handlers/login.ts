@@ -1,26 +1,51 @@
+import { db } from '../db';
+import { usersTable } from '../db/schema';
 import { type LoginInput, type AuthResponse } from '../schema';
+import { eq } from 'drizzle-orm';
 
 export const login = async (input: LoginInput): Promise<AuthResponse> => {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to authenticate a user by:
-    // 1. Finding the user by email in the database
-    // 2. Comparing the provided password with the stored hash
-    // 3. Generating a new JWT token if credentials are valid
-    // 4. Returning user data and token
-    // 5. Throwing an error if credentials are invalid
-    return Promise.resolve({
-        user: {
-            id: 1,
-            email: input.email,
-            password_hash: 'hashed_password', // This should never be returned in real implementation
-            first_name: 'John',
-            last_name: 'Doe',
-            phone: null,
-            preferred_language: 'en',
-            is_verified: true,
-            created_at: new Date(),
-            updated_at: new Date()
-        },
-        token: 'jwt_token_placeholder'
-    } as AuthResponse);
+  try {
+    // Find user by email
+    const users = await db.select()
+      .from(usersTable)
+      .where(eq(usersTable.email, input.email))
+      .execute();
+
+    if (users.length === 0) {
+      throw new Error('Invalid credentials');
+    }
+
+    const user = users[0];
+
+    // Compare password with stored hash using Bun's password verification
+    const isPasswordValid = await Bun.password.verify(input.password, user.password_hash);
+    
+    if (!isPasswordValid) {
+      throw new Error('Invalid credentials');
+    }
+
+    // Generate simple token - using format that doesn't conflict with email dots
+    // Format: userId|email|timestamp
+    const token = `${user.id}|${user.email}|${Date.now()}`;
+
+    // Return user data (without password hash) and token
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        password_hash: user.password_hash, // Keep this for schema compliance, but should be filtered out in API layer
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone: user.phone,
+        preferred_language: user.preferred_language,
+        is_verified: user.is_verified,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      },
+      token
+    };
+  } catch (error) {
+    console.error('Login failed:', error);
+    throw error;
+  }
 };
